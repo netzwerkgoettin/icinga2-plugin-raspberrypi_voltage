@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Script by Marianne M. Spiller <github@spiller.me>
+# 20180118
+
+PROG=$( basename $0 )
+STATE_OK=0
+STATE_WARNING=1
+STATE_CRITICAL=2
+STATE_UNKNOWN=3
+
+_usage() {
+  echo "Usage: $PROG"
+  exit $STATE_WARNING 
+}
+
+_check_prog() {
+
+  if [ ! -z "$1" ] ; then
+    TOCHECK=$( which $1 )
+    if [ -z "$TOCHECK" ] ; then
+      echo "UNKNOWN - cannot find $1"
+      exit $STATE_UNKNOWN
+    fi
+  fi
+}
+
+_performance_data() {
+cat <<- _EOF_
+|core=$core;;;; sdram_c=$sdram_c;;;; sdram_i=$sdram_i;;;; sdram_p=$sdram_p;;;;
+_EOF_
+}
+
+_check_prog vcgencmd 
+
+for ID in core sdram_c sdram_i sdram_p ; do
+  eval "$ID=$( vcgencmd measure_volts $ID|cut -c 6-|sed 's/.$//' )"
+done
+
+THROTTLED="$( vcgencmd get_throttled )"
+if [ "$THROTTLED" != "throttled=0x0" ] ; then
+  echo "CRITICAL: host is throttled. Main reason is most likely undervoltage."
+  _performance_data
+  exit $STATE_CRITICAL
+else
+  echo "OK: all seems fine."
+  _performance_data
+  exit $STATE_OK
+fi
