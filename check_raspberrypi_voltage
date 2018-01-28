@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Script by Marianne M. Spiller <github@spiller.me>
-# 20180118
+# Marianne M. Spiller <github@spiller.me>
+# 20180128
 
 PROG=$( basename $0 )
+MARK_OKAY="0"
 STATE_OK=0
 STATE_WARNING=1
 STATE_CRITICAL=2
@@ -26,23 +27,74 @@ _check_prog() {
 
 _performance_data() {
 cat <<- _EOF_
-|core=$core;;;; sdram_c=$sdram_c;;;; sdram_i=$sdram_i;;;; sdram_p=$sdram_p;;;;
+|core_voltage=$core_voltage;;;; sdram_c_voltage=$sdram_c_voltage;;;; sdram_i_voltage=$sdram_i_voltage;;;; sdram_p_voltage=$sdram_p_voltage;;;; arm_clock=$arm_clock;;;; core_clock=$core_clock;;;; h264_clock=$h264_clock;;;; isp_clock=$isp_clock;;;; v3d_clock=$v3d_clock;;;;
 _EOF_
 }
 
 _check_prog vcgencmd 
+_check_prog bc 
 
-for ID in core sdram_c sdram_i sdram_p ; do
-  eval "$ID=$( vcgencmd measure_volts $ID|cut -c 6-|sed 's/.$//' )"
+##---- Getting voltage values (Volt)
+for i in core sdram_c sdram_i sdram_p ; do
+  eval ${i}_voltage="$( vcgencmd measure_volts $i|cut -c 6-|sed 's/.$//' )"
 done
 
-THROTTLED="$( vcgencmd get_throttled )"
-if [ "$THROTTLED" != "throttled=0x0" ] ; then
-  echo "CRITICAL: host is throttled. Main reason is most likely undervoltage."
-  _performance_data
-  exit $STATE_CRITICAL
+##---- Getting clock speed values (Hertz) (textfile output would be Kilohertz)
+for j in arm core h264 isp v3d ; do
+  eval "${j}_clock=\"$( vcgencmd measure_clock $j|cut -d "=" -f 2 )\""
+done
+
+SHOW="printf %019d"
+THROTTLED="$( vcgencmd get_throttled|cut -d "=" -f 2|cut -c 3- )"
+BINCODE="$( echo "ibase=16; obase=2; $THROTTLED" |bc )"
+ACTUAL_TEMP="$( vcgencmd measure_temp|cut -c 6- )"
+
+if [ "$THROTTLED" != "0" ] ; then
+  EXIT_TEXT="ALERT - The following events happened on your host:"
+
+  ##---- ACTUAL states
+  if [ $( $SHOW $BINCODE|cut -c 19 ) != "0" ] ; then
+    EXIT_TEXT="$EXIT_TEXT
+ACTUAL under voltage (<4,63V) event! Check PSU!"
+    EXIT_STATE=$STATE_CRITICAL
+  fi
+  if [ $( $SHOW $BINCODE|cut -c 18 ) != "0" ] ; then
+    EXIT_TEXT="$EXIT_TEXT 
+ACTUAL limiting ARM frequency (current: $( echo "$arm_clock / 1000000"|bc )MHz) to reduce core voltage (current: $core_voltage V)
+=> This usually happens when your system is IDLE _or_ when system temperature (current: $ACTUAL_TEMP) is >80'C."
+    EXIT_STATE=$STATE_OK
+  fi
+  if [ $( $SHOW $BINCODE|cut -c 17 ) != "0" ] ; then
+    EXIT_TEXT="$EXIT_TEXT
+Host is CURRENTLY throttled, disabling turbo mode
+=> This usually happens when system temperature (current: $ACTUAL_TEMP) is >85'C to reduce core voltage (current: $core_voltage V)!"
+      EXIT_STATE=$STATE_WARNING
+  fi
+
+  ##---- PREVIOUS states 
+  if [ $( $SHOW $BINCODE|cut -c 1 ) != "0" ] ; then
+    EXIT_TEXT="$EXIT_TEXT
+Host was previously throttled, disabled turbo mode
+=> You can assume >85'C system temperature as the reason"
+    EXIT_STATE=$STATE_OK
+  fi 
+  if [ $( $SHOW $BINCODE|cut -c 2 ) != "0" ] ; then
+    EXIT_TEXT="$EXIT_TEXT
+Previous limited ARM frequency to reduce core voltage
+=> You can assume >80'C system temperature as the reason."
+    EXIT_STATE=$STATE_OK
+  fi
+  if [ $( $SHOW $BINCODE| cut -c 3 ) != "0" ] ; then
+    EXIT_TEXT="$EXIT_TEXT
+Previous under voltage (<4,63V) event. Check PSU!"
+    EXIT_STATE=$STATE_OK
+  fi
 else
-  echo "OK: all seems fine."
-  _performance_data
-  exit $STATE_OK
+  EXIT_TEXT="OK - No actual events, no previous events. All seems fine."
+  EXIT_STATE=$STATE_OK
 fi
+
+echo "$EXIT_TEXT
+=> Code 0x$THROTTLED"
+_performance_data
+exit $EXIT_STATE
