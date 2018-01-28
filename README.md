@@ -6,9 +6,9 @@ Measuring voltage values and check whether
 It is tested on Raspberry Pi Models: 1, 2 & 3, and I didn't encounter any problems so far.
 It is experimental, so use it at your own risk and don't stop thinking when using ;) 
 Drop me a note when you run into problems.
-** Status worksforme ** :)
+**Status worksforme** :)
 
-It was not that easy to get information about the hexcodes and their meaning; essentially, my only resource was [this forum posting](https://www.raspberrypi.org/forums/viewtopic.php?f=63&t=147781&start=50#p972790).
+It was not that easy to get information about the hexcodes and their meaning; essentially, my only resource was [this forum posting](https://www.raspberrypi.org/forums/viewtopic.php?f=63&t=147781&start=50#p972790). Actual states are only shown when they *currently* happen, previously states remain until system reboot - that's why I don't treat previously happened events as `CRITICAL`. The command `vcgencmd get_throttled 0x7` should reset the previously states, but in fact, it doesn't work for me. When you have further information on this - please let me know!
 
 ### Usage
 ```
