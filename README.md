@@ -1,3 +1,5 @@
+*This repository is archived.*
+
 # icinga2-plugin-raspberrypi_voltage
 Measuring voltage values and check whether
 * host *is currently*  throttled or not and
